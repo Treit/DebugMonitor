@@ -16,6 +16,14 @@ while (true)
         {
             Thread.Sleep(5000);
             await Task.Delay(2000);
+
+            try
+            {
+                throw new InvalidOperationException();
+            }
+            catch
+            {
+            }
         });
 
         tasks.Add(t);

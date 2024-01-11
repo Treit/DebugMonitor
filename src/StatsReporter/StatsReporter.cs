@@ -7,19 +7,44 @@ namespace DebugMonitor
 
     public record struct DebugStats(
         int RunningThreadPoolThreads,
-        int ExceptionCount
+        int ExceptionCount,
+        double ExceptionsPerSecond
     );
 
     public static class StatsReporter
     {
         private static readonly bool s_enabled;
         private static bool s_running;
-        private static DebugStats s_debugStats = new();
+        private static DebugStats s_stats = new();
+        private static int s_threads;
+        private static int s_exceptions;
+        private static double s_exceptionsPerSecond;
+        private static int s_exceptionsLast;
+        private static Timer? s_timer;
 
         static StatsReporter()
         {
             //s_enabled = Environment.GetEnvironmentVariable("DEBUG_MONITOR") is not null;
             s_enabled = true;
+
+            if (s_enabled)
+            {
+                var period = 1000;
+                AppDomain.CurrentDomain.FirstChanceException += (source, ea) =>
+                {
+                    Interlocked.Increment(ref s_exceptions);
+                };
+
+                s_timer = new Timer(
+                    callback: state =>
+                    {
+                        s_exceptionsPerSecond = ((double)s_exceptions - s_exceptionsLast) / (period / 1000);
+                        s_exceptionsLast = s_exceptions;
+                    },
+                    state: null,
+                    dueTime: 0,
+                    period: period);
+            }
         }
 
         private static void MonitorStats(CancellationToken ct)
@@ -30,7 +55,8 @@ namespace DebugMonitor
             {
                 try
                 {
-                    s_debugStats.RunningThreadPoolThreads = GetRunningThreadPoolThreads();
+                    s_threads = GetRunningThreadPoolThreads();
+                    s_stats = new DebugStats(s_threads, s_exceptions, s_exceptionsPerSecond);
                     Thread.Sleep(sleepTime);
                 }
                 catch (Exception e)
@@ -62,7 +88,7 @@ namespace DebugMonitor
                         {
                             try
                             {
-                                var str = JsonSerializer.Serialize(s_debugStats);
+                                var str = JsonSerializer.Serialize(s_stats);
                                 sw.WriteLine(str);
                                 Thread.Sleep(500);
                             }

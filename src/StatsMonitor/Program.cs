@@ -3,14 +3,14 @@ using System.Text.Json;
 
 Console.OutputEncoding = Encoding.UTF8;
 
-Process(() =>
+Monitor(() =>
 {
     return new PipeStream(".", "testpipe");
 });
 
-static void Process(Func<IConnectedStream> streamProvider)
+static void Monitor(Func<IConnectedStream> streamProvider)
 {
-    var last = new DebugStats(-1, -1);
+    var last = new DebugStats(-1, -1, 0.0);
     var stats = last;
     var live = false;
 
@@ -36,7 +36,7 @@ static void Process(Func<IConnectedStream> streamProvider)
                 }
             }
         }
-        catch (TimeoutException)
+        catch (Exception e) when (e is TimeoutException or IOException)
         {
             live = false;
         }
@@ -49,6 +49,7 @@ static void Process(Func<IConnectedStream> streamProvider)
 static void ProcessMessage(bool live, DebugStats last, DebugStats stats)
 {
     var threads = stats.RunningThreadPoolThreads;
+    var exceptions = stats.ExceptionCount;
 
     if (!live || stats != last)
     {
@@ -57,6 +58,8 @@ static void ProcessMessage(bool live, DebugStats last, DebugStats stats)
         Console.Write($"{threads}");
         Console.ResetColor();
         Console.Write(" running thread pool threads.");
+        Console.Write($" {stats.ExceptionCount} total exceptions.");
+        Console.Write($" {stats.ExceptionsPerSecond} exceptions per second.");
         Console.CursorVisible = false;
 
         if (!live)
@@ -87,5 +90,6 @@ static void ProcessMessage(bool live, DebugStats last, DebugStats stats)
 
 public record struct DebugStats(
     int RunningThreadPoolThreads,
-    int ExceptionCount
+    int ExceptionCount,
+    double ExceptionsPerSecond
 );
