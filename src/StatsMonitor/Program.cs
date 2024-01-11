@@ -1,6 +1,4 @@
-﻿
-using System.IO.Pipes;
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 
 Console.OutputEncoding = Encoding.UTF8;
@@ -14,29 +12,27 @@ static void Process(Func<IConnectedStream> streamProvider)
 {
     var last = new DebugStats(-1, -1);
     var stats = last;
+    var live = false;
 
     while (true)
     {
-        var live = false;
+        live = false;
         ProcessMessage(live, last, stats);
 
         try
         {
-            using (var inputStream = streamProvider())
-            {
-                using (StreamReader sr = new StreamReader(inputStream.DataStream))
-                {
-                    while (inputStream.IsConnected)
-                    {
-                        live = true;
+            using var inputStream = streamProvider();
+            using var sr = new StreamReader(inputStream.DataStream);
 
-                        while (sr.ReadLine() is string line)
-                        {
-                            stats = JsonSerializer.Deserialize<DebugStats>(line);
-                            ProcessMessage(live, last, stats);
-                            last = stats;
-                        }
-                    }
+            if (inputStream.IsConnected)
+            {
+                live = true;
+
+                while (sr.ReadLine() is string line)
+                {
+                    stats = JsonSerializer.Deserialize<DebugStats>(line);
+                    ProcessMessage(live, last, stats);
+                    last = stats;
                 }
             }
         }
@@ -93,47 +89,3 @@ public record struct DebugStats(
     int RunningThreadPoolThreads,
     int ExceptionCount
 );
-
-interface IConnectedStream : IDisposable
-{
-    public Stream DataStream { get; }
-    public bool IsConnected { get; }
-}
-
-sealed class PipeStream : IConnectedStream, IDisposable
-{
-    bool _disposed;
-    readonly NamedPipeClientStream _clientStream;
-
-    public PipeStream(string host, string pipeName)
-    {
-        var npcs = new NamedPipeClientStream(host, pipeName, PipeDirection.In);
-        _clientStream = npcs;
-        _clientStream.Connect();
-    }
-
-    public Stream DataStream
-    {
-        get
-        {
-            ThrowIfDisposed();
-            return _clientStream;
-        }
-    }
-
-    public bool IsConnected => _clientStream.IsConnected;
-
-    public void Dispose()
-    {
-        _clientStream.Dispose();
-        _disposed = true;
-    }
-
-    void ThrowIfDisposed()
-    {
-        if (_disposed)
-        {
-            throw new ObjectDisposedException(nameof(PipeStream));
-        }
-    }
-}
